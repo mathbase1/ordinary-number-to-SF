@@ -1,1 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Standard Form — Interactive</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js" defer></script>
+<style>
+:root{
+  --ink:#0f172a; --muted:#e5e7eb; --brand:#2563eb; --good:#16a34a; --bad:#dc2626;
+  --bg1:#f6f9ff; --bg2:#eef3ff;
 
+  /* ↓ tweak these to control spacing */
+  --gap: .20em;          /* base tiny gap between all digits */
+  --gapActive: .58em;    /* bigger gap ONLY where the red decimal currently is */
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;overflow:hidden}
+body{
+  font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,'Helvetica Neue',Arial;
+  color:var(--ink);
+  background:linear-gradient(180deg,var(--bg1),var(--bg2));
+  display:flex; justify-content:center; align-items:flex-start;
+}
+
+/* Fit-to-viewport wrapper (scaled so nothing scrolls) */
+#app{ width:1200px; max-width:96vw; padding:18px 20px; transform-origin:top center }
+
+/* Head */
+h1{font-weight:900; text-align:center; font-size:clamp(1.4rem,4vw,2.2rem); margin:.25rem 0 .45rem}
+#instructions{opacity:.95; text-align:center; margin:.2rem 0 1.0rem; font-size:clamp(.95rem,2.2vw,1.05rem)}
+
+/* HUD (top-right, one line) */
+#hud{ display:flex; justify-content:flex-end; gap:.6rem; margin:0 0 1.0rem; }
+.badge{
+  display:inline-flex; align-items:center; gap:.5rem; padding:.42rem .8rem;
+  border:1px solid var(--muted); background:#fff; border-radius:999px; font-weight:800;
+  box-shadow:0 2px 6px rgba(0,0,0,.06);
+  font-size:clamp(.9rem,2vw,1rem);
+}
+
+/* Board — BIG vertical space between question and answer */
+#board{ display:flex; flex-direction:column; align-items:center; gap:5.2rem }
+
+/* Question row: number and arrows */
+#numRow{
+  display:flex; align-items:center; justify-content:center; gap:22px;
+}
+.arrow{
+  border:none; background:var(--brand); color:#fff; font-weight:900; cursor:pointer;
+  padding:.75rem 1.15rem; border-radius:12px; box-shadow:0 8px 24px rgba(37,99,235,.28);
+  font-size:clamp(1rem,3vw,1.25rem);
+}
+.arrow:disabled{opacity:.5; cursor:not-allowed}
+
+/* Inline number (dynamic gap at the active boundary) */
+#num{
+  display:flex; align-items:baseline; justify-content:center;
+  font-weight:900; letter-spacing:.01em;
+  font-size:clamp(2.2rem,9vw,4.4rem);
+}
+.dg{ display:inline-block; padding:0 .03em }  /* little breathing room for digits */
+
+/* “Join” anchors sit between digits. Width grows only at the red decimal. */
+.j{ position:relative; display:inline-block; width:var(--gap) }
+.j.active{ width:var(--gapActive) }
+
+/* DOTS: baseline-aligned, centered inside the join; red overlays grey at same slot */
+.dec{
+  position:absolute; left:50%; transform:translateX(-50%);
+  bottom:.02em; font-weight:900; font-size:1em; line-height:1; pointer-events:none;
+}
+.dec.orig{ color:#6b7280; z-index:2 }  /* grey original */
+.dec.user{ color:#dc2626; z-index:3 }  /* red movable */
+
+/* Answer area */
+#answerArea{ display:flex; flex-direction:column; align-items:center; gap:1.4rem }
+
+/* Coefficient + huge ×10 + exponent box in the corner */
+#equationRow{
+  display:flex; align-items:flex-end; justify-content:center; gap:2.0rem; flex-wrap:wrap;
+}
+input.big{
+  padding:.9rem 1.1rem; border:3px solid var(--brand); border-radius:12px;
+  font-size:clamp(1.5rem,3.8vw,1.9rem); width:min(360px,48vw); text-align:center; font-weight:800;
+}
+.x10wrap{
+  display:inline-flex; align-items:flex-end; gap:.5rem; line-height:1;
+  font-weight:900; font-size:clamp(2.6rem,9.4vw,4.6rem); position:relative;
+}
+.tenWrap{ position:relative; display:inline-block }
+.powBox{
+  position:absolute;
+  /* exponent box offset — corner of the “10” */
+  top:-1.05em;
+  left:100%;
+  margin-left:.45em;
+  width:min(140px,22vw);
+  padding:.55rem .65rem; border:3px solid var(--brand); border-radius:10px;
+  font-size:clamp(1.1rem,3vw,1.35rem); text-align:center; font-weight:800;
+  background:#fff;
+}
+
+/* Controls */
+.controls{ display:flex; align-items:center; justify-content:center; gap:12px; flex-wrap:wrap }
+button.ctrl{
+  border:none; border-radius:12px; padding:.8rem 1.25rem; font-weight:900; cursor:pointer;
+  font-size:clamp(1rem,2.6vw,1.2rem);
+  background:var(--brand); color:#fff; box-shadow:0 8px 24px rgba(37,99,235,.25)
+}
+button.ctrl.secondary{ background:#9aa3af }
+button.ctrl:disabled{ opacity:.45; cursor:not-allowed }
+
+/* Rules drop-tab */
+details{
+  margin:.2rem auto 0; width:min(980px,94%); background:#fff; border:1px solid var(--muted);
+  border-radius:12px; padding:.6rem .9rem;
+}
+details summary{ cursor:pointer; font-weight:900; color:#0b3cc7; font-size:1rem }
+.ruleList{ margin:.5rem 0 .2rem .9rem }
+.ruleList li{ margin:.25rem 0 }
+
+/* Feedback overlay */
+#feedback{
+  position:fixed; inset:0; display:none; align-items:center; justify-content:center;
+  background:rgba(0,0,0,.35); z-index:1000;
+}
+#feedback.show{ display:flex }
+.fbCard{
+  background:#fff; padding:22px 26px; border-radius:16px; text-align:center;
+  border:6px solid transparent; min-width:320px; box-shadow:0 18px 48px rgba(0,0,0,.28)
+}
+.fbCard.good{ border-color:var(--good) }
+.fbCard.bad{  border-color:var(--bad)  }
+.fbIcon{ font-size:64px; margin-bottom:.35rem }
+.fbMsg{ font-weight:900; font-size:1.25rem }
+
+/* Setup / End overlays */
+.overlay{position:fixed; inset:0; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center;
+  visibility:hidden; opacity:0; transition:opacity .25s ease; z-index:1000}
+.overlay.show{visibility:visible; opacity:1}
+.dialog{
+  background:#fff; padding:24px 26px; border-radius:14px; text-align:center;
+  box-shadow:0 16px 44px rgba(0,0,0,.3); width:min(92vw,520px)
+}
+.dialog h2{margin:0 0 .6rem}
+.dialog label{display:block; margin:.7rem 0 .35rem; font-weight:800}
+.dialog input[type=text], .dialog select, .dialog input[type=number]{
+  width:100%; padding:.6rem .75rem; border:2px solid var(--brand); border-radius:10px; font-size:1rem;
+}
+.row{display:flex; gap:.6rem; align-items:center; justify-content:center; margin-top:.35rem; flex-wrap:wrap}
+.dialog button{width:100%; margin-top:1rem}
+
+/* Toast */
+#toast{
+  position:fixed; bottom:18px; left:50%; transform:translateX(-50%);
+  background:#111827; color:#fff; padding:.5rem .9rem; border-radius:8px; display:none; font-weight:800; z-index:1100
+}
+</style>
+</head>
+<body>
+<main id="app" aria-live="polite">
+  <h1>Convert to Standard Form</h1>
+  <p id="instructions">Move the <b>red decimal</b> (grey is original). Enter the coefficient, then put <b>n</b> in the box on the “10”.</p>
+
+  <!-- HUD -->
+  <div id="hud">
+    <span class="badge">👤 <b id="playerName">—</b></span>
+    <span class="badge">🎯 <b id="modeText">—</b></span>
+    <span class="badge">⭐ <b id="score">0</b></span>
+    <span class="badge">⏱️ <b id="timer">00:00</b></span>
+  </div>
+
+  <section id="board" aria-label="Game board">
+    <!-- QUESTION -->
+    <div id="numRow">
+      <button id="leftBtn" class="arrow" aria-label="Move decimal left">⬅️</button>
+      <div id="num" aria-label="Number with inline decimals"></div>
+      <button id="rightBtn" class="arrow" aria-label="Move decimal right">➡️</button>
+    </div>
+
+    <!-- ANSWER -->
+    <div id="answerArea">
+      <div id="equationRow">
+        <input id="coeff" class="big" type="text" inputmode="decimal" placeholder="Coefficient (e.g. 4.5)" />
+        <div class="x10wrap" aria-label="times ten with power box">
+          <span class="xSym">×</span>
+          <span class="tenWrap"><span class="ten">10</span>
+            <input id="pow" class="powBox" type="number" step="1" placeholder="n"/>
+          </span>
+        </div>
+      </div>
+      <div class="controls">
+        <button id="checkBtn" class="ctrl">Check</button>
+        <button id="nextBtn"  class="ctrl secondary">Next Question</button>
+      </div>
+
+      <details>
+        <summary>Rules of Standard Form</summary>
+        <ul class="ruleList">
+          <li>Write numbers as <b>a × 10<sup>n</sup></b>.</li>
+          <li><b>a</b> must satisfy <b>1 ≤ a &lt; 10</b>.</li>
+          <li><b>n</b> is an integer:
+            <ul>
+              <li><b>n &gt; 0</b> when the original number &gt; 1 (decimal moves left).</li>
+              <li><b>n &lt; 0</b> when the original number &lt; 1 (decimal moves right).</li>
+            </ul>
+          </li>
+        </ul>
+      </details>
+    </div>
+  </section>
+
+  <!-- Feedback -->
+  <div id="feedback" role="alert" aria-live="assertive">
+    <div class="fbCard" id="fbCard">
+      <div class="fbIcon" id="fbIcon">✔️</div>
+      <div class="fbMsg" id="fbMsg">Correct!</div>
+    </div>
+  </div>
+
+  <!-- Setup -->
+  <div class="overlay show" id="setupOv" aria-modal="true" role="dialog">
+    <div class="dialog">
+      <h2>Start a Session</h2>
+
+      <label for="nameInput">Your name</label>
+      <input id="nameInput" type="text" placeholder="e.g., Aisha" />
+
+      <label for="modeSel" style="margin-top:.55rem">Game mode</label>
+      <select id="modeSel">
+        <option value="timed" selected>Timed</option>
+        <option value="target">Target score</option>
+      </select>
+
+      <div id="timedRow" class="row">
+        <label for="timeSel" style="margin:0">Duration</label>
+        <select id="timeSel">
+          <option value="300">5 min</option>
+          <option value="600" selected>10 min</option>
+          <option value="900">15 min</option>
+          <option value="1200">20 min</option>
+          <option value="-1">Unlimited</option>
+        </select>
+      </div>
+
+      <div id="targetRow" class="row" style="display:none">
+        <label for="targetInput" style="margin:0">Target score</label>
+        <input id="targetInput" type="number" min="1" value="10" />
+      </div>
+
+      <button id="beginBtn" class="ctrl">Begin</button>
+    </div>
+  </div>
+
+  <!-- End -->
+  <div class="overlay" id="endOv" aria-modal="true" role="dialog">
+    <div class="dialog">
+      <h2 id="endTitle">Finished</h2>
+      <p id="endMsg"></p>
+      <button id="againBtn" class="ctrl">Play again</button>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+</main>
+
+<script>
+/* ==================== Fit-to-viewport ==================== */
+let SCALE=1;
+function fitToViewport(){
+  const app=document.getElementById('app');
+  app.style.transform='none';
+  const r=app.getBoundingClientRect();
+  const m=12; // outer margins
+  const sX=(innerWidth - m*2)/r.width;
+  const sY=(innerHeight - m*2)/r.height;
+  SCALE=Math.min(1, sX, sY);
+  app.style.transform=`scale(${SCALE})`;
+}
+addEventListener('resize', ()=>requestAnimationFrame(fitToViewport));
+addEventListener('DOMContentLoaded', fitToViewport);
+addEventListener('load', fitToViewport);
+
+/* ==================== Utilities & state ==================== */
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const toast=t=>{const o=$("#toast");o.textContent=t;o.style.display="block";setTimeout(()=>o.style.display="none",1800);};
+const fmt=s=>`${String(s/60|0).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+const rint=(a,b)=>Math.floor(Math.random()*(b-a+1))+a;
+
+let playerName='—', mode='timed', limit=-1, target=0;
+let score=0, secs=0, timerID=null;
+let q=null;          // question payload
+let pos=0, pos0=0;  // user decimal boundary & original boundary (0..N)
+let N=0;            // number of digits
+
+/* ==================== Number generator ==================== */
+/* 3..7 figures; 1..4 non-zero leading; mix of >1 and <1
+   For <1 we *display* a leading zero (0.xxx). */
+function genNumber(){
+  const greater = Math.random()<0.5;
+  if(greater){
+    const K = rint(3,7);
+    const m = Math.min(rint(1,4), K);
+    const nz = Array.from({length:m},()=>String(rint(1,9)));
+    const digits = nz.join('') + '0'.repeat(K-m);
+    const aStr = (m===1) ? nz[0] : nz[0]+'.'+nz.slice(1).join('');
+    const n = K-1;
+    pos0 = K; pos = pos0; N=K;
+    return {kind:'>1', digits, aStr, n};
+  }else{
+    const T = rint(3,7);
+    const m = Math.min(rint(1,4), T-1);
+    const L = rint(1, Math.max(1, T-m));
+    const nz = Array.from({length:m},()=>String(rint(1,9)));
+    const trail = Math.max(0, T-(L+m));
+    const digits = '0'.repeat(L) + nz.join('') + '0'.repeat(trail);
+    const aStr = (m===1) ? nz[0] : nz[0]+'.'+nz.slice(1).join('');
+    const n = -(L+1);
+    pos0 = 0; pos = pos0; N=T;
+    return {kind:'<1', digits, aStr, n};
+  }
+}
+
+/* ==================== Render inline number ==================== */
+function makeDot(cls){ const s=document.createElement('span'); s.className='dec '+cls; s.textContent='.'; return s; }
+
+function renderNumber(){
+  const box=$("#num"); box.innerHTML='';
+
+  // leading zero for numbers < 1 (to show 0.xxx)
+  if(q && q.kind==='<1'){
+    const lead=document.createElement('span'); lead.className='dg'; lead.textContent='0';
+    box.appendChild(lead);
+  }
+
+  for(let i=0;i<=N;i++){
+    const a=document.createElement('span');
+    a.className='j' + (i===pos ? ' active' : '');
+    if(i===pos0) a.appendChild(makeDot('orig'));
+    if(i===pos)  a.appendChild(makeDot('user'));
+    box.appendChild(a);
+
+    if(i<N){
+      const d=document.createElement('span'); d.className='dg'; d.textContent=q.digits[i];
+      box.appendChild(d);
+    }
+  }
+
+  $("#leftBtn").disabled = (pos===0);
+  $("#rightBtn").disabled = (pos===N);
+}
+function setPos(i){ pos=Math.max(0,Math.min(N,i)); renderNumber(); }
+
+/* ==================== Answer checking ==================== */
+function normCoeff(s){
+  let t=(s||'').trim().replace(/,/g,'');
+  if(!t) return null;
+  if(!/^(\d+(\.\d+)?|\.\d+)$/.test(t)) return null;
+  if(t.startsWith('.')) t='0'+t;
+  if(t.includes('.')) t=t.replace(/\.?0+$/,'');
+  return t;
+}
+function checkAnswer(){
+  const aIn = normCoeff($("#coeff").value);
+  const nRaw = $("#pow").value.trim();
+  if(!aIn) return flash(false,'Enter a valid coefficient (e.g. 3.2)');
+  if(!/^[-+]?\d+$/.test(nRaw)) return flash(false,'Enter an integer power n');
+  const aNum=parseFloat(aIn);
+  if(!(aNum>=1 && aNum<10)) return flash(false,'Coefficient must satisfy 1 ≤ a < 10');
+
+  const ok = ((aIn===q.aStr) || (parseFloat(aIn)===parseFloat(q.aStr) && aIn.replace(/\.?0+$/,'')===q.aStr))
+             && (parseInt(nRaw,10)===q.n);
+
+  if(ok){
+    score++; $("#score").textContent=String(score);
+    flash(true, `Correct: ${q.aStr} × 10^${q.n}`);
+    if(window.confetti){
+      confetti({particleCount:170, spread:70, origin:{y:.6}});
+      confetti({particleCount:140, spread:100, startVelocity:45, origin:{x:.2, y:.6}});
+      confetti({particleCount:140, spread:100, startVelocity:45, origin:{x:.8, y:.6}});
+    }
+    $("#checkBtn").disabled=true;
+  }else{
+    flash(false, "Not quite — check your coefficient and/or power");
+  }
+  if(mode==='target' && ok && score>=target) endGame('🎯 Target reached!');
+}
+
+/* ==================== Feedback overlay ==================== */
+function flash(good, msg){
+  const fb=$("#feedback"), card=$("#fbCard"), icon=$("#fbIcon"), txt=$("#fbMsg");
+  txt.textContent = msg || (good?"Correct!":"Try again");
+  card.classList.remove('good','bad');
+  card.classList.add(good?'good':'bad');
+  icon.textContent = good ? '✅' : '❌';
+  fb.classList.add('show');
+  if(!good){
+    document.body.style.boxShadow='inset 0 0 0 9999px rgba(220,38,38,.15)';
+    setTimeout(()=>{ document.body.style.boxShadow='none'; }, 500);
+  }
+  setTimeout(()=>fb.classList.remove('show'), good?1200:900);
+}
+
+/* ==================== Game flow ==================== */
+function newQuestion(){
+  q = genNumber();
+  $("#coeff").value=''; $("#pow").value='';
+  $("#checkBtn").disabled=false;
+  setPos(pos0);
+  renderNumber();
+}
+$("#checkBtn").onclick = checkAnswer;
+$("#nextBtn").onclick  = ()=>{ newQuestion(); };
+
+/* Move controls + keyboard */
+$("#leftBtn").onclick = ()=>setPos(pos-1);
+$("#rightBtn").onclick= ()=>setPos(pos+1);
+document.addEventListener('keydown', e=>{
+  if($("#setupOv").classList.contains('show')) return;
+  if(e.key==='ArrowLeft')  setPos(pos-1);
+  if(e.key==='ArrowRight') setPos(pos+1);
+  if(e.key==='Enter' && !$("#checkBtn").disabled && document.activeElement.tagName!=='INPUT') checkAnswer();
+});
+
+/* ==================== Setup & Timer ==================== */
+$("#modeSel").onchange = (e)=>{
+  const v=e.target.value;
+  $("#timedRow").style.display = (v==='timed') ? 'flex' : 'none';
+  $("#targetRow").style.display= (v==='target')? 'flex' : 'none';
+};
+
+function fmtTime(s){ return `${String(s/60|0).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`; }
+function updateTimerBadge(){
+  if(mode!=='timed' || limit<0){ $("#timer").textContent = fmtTime(secs); return; }
+  const rem = Math.max(0, limit - secs);
+  $("#timer").textContent = fmtTime(rem);
+}
+function startTimer(){
+  if(timerID) clearInterval(timerID);
+  secs=0; updateTimerBadge();
+  timerID=setInterval(()=>{
+    secs++;
+    if(mode==='timed' && limit>=0){
+      const rem=limit-secs; updateTimerBadge();
+      if(rem<=0){ endGame('⏰ Time up!'); }
+    }else updateTimerBadge();
+  },1000);
+}
+function stopTimer(){ if(timerID){ clearInterval(timerID); timerID=null; } }
+
+$("#beginBtn").onclick = ()=>{
+  playerName = ($("#nameInput").value||'Player').trim();
+  mode = $("#modeSel").value;
+  limit = parseInt($("#timeSel").value,10);
+  target = Math.max(1, parseInt($("#targetInput").value||"10",10));
+
+  $("#playerName").textContent = playerName;
+  $("#modeText").textContent = (mode==='timed'
+    ? (limit<0 ? 'Timed — Unlimited' : `Timed — ${fmt(limit)}`)
+    : `Target — ${target}`);
+
+  score=0; $("#score").textContent='0';
+  $("#setupOv").classList.remove('show');
+  $("#endOv").classList.remove('show');
+
+  newQuestion();
+  startTimer();
+};
+
+function endGame(title){
+  stopTimer();
+  $("#endTitle").textContent=title;
+  $("#endMsg").innerHTML=`Well played, <b>${playerName}</b>!<br>Final score: <b>${score}</b> &nbsp;•&nbsp; Time: <b>${fmt(secs)}</b>`;
+  $("#endOv").classList.add('show');
+}
+$("#againBtn").onclick=()=>{
+  $("#endOv").classList.remove('show');
+  $("#setupOv").classList.add('show');
+};
+
+/* Initial fit & show setup */
+fitToViewport();
+$("#setupOv").classList.add('show');
+</script>
+</body>
+</html>
